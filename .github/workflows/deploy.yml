@@ -32,6 +32,17 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           submodules: recursive
 
+      - name: Patch submodule Dockerfiles for target architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sed -i 's/GOARCH=amd64/GOARCH="$(go env GOARCH)"/g' server/api/Dockerfile
+          sed -i 's/GOARCH=amd64/GOARCH="$(go env GOARCH)"/g' server/fetcher/Dockerfile
+
+          grep -n 'GOARCH=' server/api/Dockerfile
+          grep -n 'GOARCH=' server/fetcher/Dockerfile
+
       - name: Guard deploy actor is deg-develop member
         env:
           DEPLOY_ACTOR: ${{ github.actor }}
