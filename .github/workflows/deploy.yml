@@ -17,11 +17,6 @@ jobs:
       id-token: write
 
     steps:
-      - name: Checkout PR head
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-
       - name: Create GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v1
@@ -29,6 +24,13 @@ jobs:
           app-id: ${{ secrets.ORG_GH_APP_ID }}
           private-key: ${{ secrets.ORG_GH_APP_PRIVATE_KEY }}
           owner: deg-labs
+
+      - name: Checkout PR head (with submodules)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          token: ${{ steps.app-token.outputs.token }}
+          submodules: recursive
 
       - name: Guard deploy actor is deg-develop member
         env:
