@@ -22,8 +22,6 @@ docker compose up --build
 
 `client` (`volatility-ncmma-notifier`) から `server` API への接続先は、Docker 内通信で `http://nginx/volatility` と `http://nginx/volume` を使います。
 
-外部公開ポートは `8001` です（`http://localhost:8001`）。
-
 ## CI/CD (GCE Deploy)
 
 `hdm/.github/workflows/deploy.yml` を参考に、同等のラベル駆動デプロイを追加しています。
