@@ -6,223 +6,48 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
     if: |
       github.event_name == 'pull_request' &&
       github.event.action == 'labeled' &&
       (github.event.label.name == 'dev' || github.event.label.name == 'stg' || github.event.label.name == 'prd')
-
+    uses: deg-labs/github-workflows/.github/workflows/gce-deploy.yml@main
     permissions:
       contents: read
       id-token: write
-
-    steps:
-      - name: Create GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.ORG_GH_APP_ID }}
-          private-key: ${{ secrets.ORG_GH_APP_PRIVATE_KEY }}
-          owner: deg-labs
-
-      - name: Checkout PR head (with submodules)
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          token: ${{ steps.app-token.outputs.token }}
-          submodules: recursive
-
-      - name: Patch submodule Dockerfiles for target architecture
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          sed -i 's/GOARCH=amd64/GOARCH="$(go env GOARCH)"/g' server/api/Dockerfile
-          sed -i 's/GOARCH=amd64/GOARCH="$(go env GOARCH)"/g' server/fetcher/Dockerfile
-
-          grep -n 'GOARCH=' server/api/Dockerfile
-          grep -n 'GOARCH=' server/fetcher/Dockerfile
-
-      - name: Guard deploy actor is deg-develop member
-        env:
-          DEPLOY_ACTOR: ${{ github.actor }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if ! command -v gh >/dev/null 2>&1; then
-            echo "GitHub CLI (gh) is required but not installed."
-            exit 1
-          fi
-
-          if ! TEAM_MEMBERS="$(gh api orgs/deg-labs/teams/deg-develop/members --jq '.[].login')"; then
-            echo "Failed to fetch deg-labs/deg-develop members via GitHub API."
-            echo "Check ORG_GH_APP_ID / ORG_GH_APP_PRIVATE_KEY and app permissions (Members: Read)."
-            exit 1
-          fi
-
-          if ! grep -Fxq "$DEPLOY_ACTOR" <<<"$TEAM_MEMBERS"; then
-            echo "Actor '$DEPLOY_ACTOR' is not in deg-labs/deg-develop. Deployment is blocked."
-            echo "Team members fetched from API:"
-            echo "$TEAM_MEMBERS"
-            exit 1
-          fi
-
-          echo "Actor '$DEPLOY_ACTOR' is allowed to deploy."
-
-      - name: Set deploy vars by label
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          case "${{ github.event.label.name }}" in
-            dev)
-              echo "GCE_INSTANCE_NAME=${{ secrets.DEV_GCE_INSTANCE_NAME }}" >> "$GITHUB_ENV"
-              echo "GCP_SA_EMAIL=${{ secrets.DEV_GCP_SA_EMAIL }}" >> "$GITHUB_ENV"
-              echo "GCP_WIF_PROVIDER=${{ secrets.DEV_GCP_WIF_PROVIDER }}" >> "$GITHUB_ENV"
-              {
-                echo "APP_ENV<<EOF"
-                echo "${{ secrets.DEV_APP_ENV }}"
-                echo "EOF"
-              } >> "$GITHUB_ENV"
-              ;;
-            stg)
-              echo "GCE_INSTANCE_NAME=${{ secrets.STG_GCE_INSTANCE_NAME }}" >> "$GITHUB_ENV"
-              echo "GCP_SA_EMAIL=${{ secrets.STG_GCP_SA_EMAIL }}" >> "$GITHUB_ENV"
-              echo "GCP_WIF_PROVIDER=${{ secrets.STG_GCP_WIF_PROVIDER }}" >> "$GITHUB_ENV"
-              {
-                echo "APP_ENV<<EOF"
-                echo "${{ secrets.STG_APP_ENV }}"
-                echo "EOF"
-              } >> "$GITHUB_ENV"
-              ;;
-            prd)
-              echo "GCE_INSTANCE_NAME=${{ secrets.PRD_GCE_INSTANCE_NAME }}" >> "$GITHUB_ENV"
-              echo "GCP_SA_EMAIL=${{ secrets.PRD_GCP_SA_EMAIL }}" >> "$GITHUB_ENV"
-              echo "GCP_WIF_PROVIDER=${{ secrets.PRD_GCP_WIF_PROVIDER }}" >> "$GITHUB_ENV"
-              {
-                echo "APP_ENV<<EOF"
-                echo "${{ secrets.PRD_APP_ENV }}"
-                echo "EOF"
-              } >> "$GITHUB_ENV"
-              ;;
-          esac
-
-      - name: Validate required variables
-        shell: bash
-        run: |
-          set -euo pipefail
-          : "${GCE_INSTANCE_NAME:?GCE_INSTANCE_NAME is required}"
-          : "${GCP_SA_EMAIL:?GCP_SA_EMAIL is required}"
-          : "${GCP_WIF_PROVIDER:?GCP_WIF_PROVIDER is required}"
-          : "${APP_ENV:?APP_ENV is required}"
-
-      - id: auth
-        name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
-        with:
-          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
-          service_account: ${{ env.GCP_SA_EMAIL }}
-
-      - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Start dev/stg GCE instance when stopped
-        if: github.event.label.name == 'dev' || github.event.label.name == 'stg'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          for _ in {1..60}; do
-            instance_status="$(gcloud compute instances describe "${GCE_INSTANCE_NAME}" \
-              --zone "${{ secrets.GCE_ZONE }}" \
-              --format='value(status)')"
-
-            if [[ "${instance_status}" == "RUNNING" ]]; then
-              echo "Instance ${GCE_INSTANCE_NAME} is RUNNING."
-              break
-            fi
-
-            if [[ "${instance_status}" == "TERMINATED" ]]; then
-              echo "Starting stopped instance ${GCE_INSTANCE_NAME}."
-              gcloud compute instances start "${GCE_INSTANCE_NAME}" \
-                --zone "${{ secrets.GCE_ZONE }}"
-            else
-              echo "Instance ${GCE_INSTANCE_NAME} status is ${instance_status}; waiting."
-            fi
-
-            sleep 5
-          done
-
-          if [[ "${instance_status}" != "RUNNING" ]]; then
-            echo "Timed out waiting for ${GCE_INSTANCE_NAME} to reach RUNNING state."
-            exit 1
-          fi
-
-          for _ in {1..30}; do
-            if gcloud compute ssh "${GCE_INSTANCE_NAME}" \
-              --zone "${{ secrets.GCE_ZONE }}" \
-              --command 'true' \
-              --quiet \
-              --ssh-flag='-o ConnectTimeout=5'; then
-              echo "SSH is ready on ${GCE_INSTANCE_NAME}."
-              exit 0
-            fi
-
-            echo "Waiting for SSH on ${GCE_INSTANCE_NAME}."
-            sleep 5
-          done
-
-          echo "Timed out waiting for SSH on ${GCE_INSTANCE_NAME}."
-          exit 1
-
-      - name: Generate .env from secret
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s\n' "${APP_ENV}" > .env
-
-      - name: Pack and upload artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          tar -C "$GITHUB_WORKSPACE" -czf /tmp/app.tar.gz \
-            --exclude=.git \
-            --exclude=.github \
-            --exclude=.env \
-            --exclude=server/data \
-            --exclude=server/logs \
-            --exclude=client/ncmma/data \
-            --exclude=client/ncmma/logs \
-            --exclude=client/ncmma/cache \
-            .
-
-          gcloud compute scp .env /tmp/app.tar.gz "${GCE_INSTANCE_NAME}":~ \
-            --zone "${{ secrets.GCE_ZONE }}"
-
-      - name: Deploy on GCE
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          gcloud compute ssh "${GCE_INSTANCE_NAME}" \
-            --zone "${{ secrets.GCE_ZONE }}" \
-            --command "
-              set -e
-              TARGET_DIR='${{ vars.DEPLOY_TARGET_DIR || '/opt/apps/volatility-monorepo' }}'
-
-              sudo rm -rf \"\$TARGET_DIR\"
-              sudo mkdir -p \"\$TARGET_DIR\"
-              sudo chown -R \$(id -u):\$(id -g) \"\$TARGET_DIR\"
-
-              tar -xzf ~/app.tar.gz -C \"\$TARGET_DIR\"
-              rm ~/app.tar.gz
-              mv -f ~/.env \"\$TARGET_DIR/.env\"
-
-              cd \"\$TARGET_DIR\"
-              sudo docker compose down
-              sudo docker compose up -d --build
-              sudo docker image prune -f || true
-            "
+    secrets: inherit
+    with:
+      checkout_submodules: true
+      enforce_deploy_team: true
+      start_instance: ${{ github.event.label.name != 'prd' }}
+      gce_instance_secret: ${{ github.event.label.name == 'dev' && 'DEV_GCE_INSTANCE_NAME' || github.event.label.name == 'stg' && 'STG_GCE_INSTANCE_NAME' || 'PRD_GCE_INSTANCE_NAME' }}
+      gce_zone_secret: GCE_ZONE
+      gcp_sa_email_secret: ${{ github.event.label.name == 'dev' && 'DEV_GCP_SA_EMAIL' || github.event.label.name == 'stg' && 'STG_GCP_SA_EMAIL' || 'PRD_GCP_SA_EMAIL' }}
+      gcp_wif_provider_secret: ${{ github.event.label.name == 'dev' && 'DEV_GCP_WIF_PROVIDER' || github.event.label.name == 'stg' && 'STG_GCP_WIF_PROVIDER' || 'PRD_GCP_WIF_PROVIDER' }}
+      app_env_secret: ${{ github.event.label.name == 'dev' && 'DEV_APP_ENV' || github.event.label.name == 'stg' && 'STG_APP_ENV' || 'PRD_APP_ENV' }}
+      github_app_id_secret: ORG_GH_APP_ID
+      github_app_private_key_secret: ORG_GH_APP_PRIVATE_KEY
+      artifact_excludes: |
+        server/data
+        server/logs
+        client/ncmma/data
+        client/ncmma/logs
+        client/ncmma/cache
+      additional_upload_files: |
+        .env
+      prepare_command: |
+        set -euo pipefail
+        sed -i 's/GOARCH=amd64/GOARCH="$(go env GOARCH)"/g' server/api/Dockerfile
+        sed -i 's/GOARCH=amd64/GOARCH="$(go env GOARCH)"/g' server/fetcher/Dockerfile
+        printf '%s\n' "${APP_ENV}" > .env
+      remote_deploy_command: |
+        set -e
+        TARGET_DIR='/opt/apps/volatility-monorepo'
+        sudo rm -rf "$TARGET_DIR"
+        sudo mkdir -p "$TARGET_DIR"
+        sudo chown -R "$(id -u):$(id -g)" "$TARGET_DIR"
+        tar -xzf ~/app.tar.gz -C "$TARGET_DIR"
+        mv -f ~/.env "$TARGET_DIR/.env"
+        cd "$TARGET_DIR"
+        sudo docker compose down
+        sudo docker compose up -d --build
+        sudo docker image prune -f || true
