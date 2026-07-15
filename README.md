@@ -1,44 +1,21 @@
-# volatility-monorepo
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
 
-このモノレポ直下の `.env` を使って、`server` と `client` を 1 つの Docker Compose で起動できます。
+- [リリース / デプロイ方法](#%E3%83%AA%E3%83%AA%E3%83%BC%E3%82%B9--%E3%83%87%E3%83%97%E3%83%AD%E3%82%A4%E6%96%B9%E6%B3%95)
 
-## 使い方
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
-1. ルートに `.env` を作成
 
-```bash
-cp .env.example .env
-```
+## リリース / デプロイ方法
 
-2. 必須値を設定
+このリポジトリは GitHub Actions の `deploy-to-gce` ワークフローで GCE インスタンスへデプロイされます。
 
-- `DISCORD_WEBHOOK_URL`
+1. `main` ブランチから作業ブランチを作成し、変更を実施します。
+2. `main` 向けにプルリクエストを作成します。
+3. デプロイ先に応じて PR にラベルを付与します。
+   - `dev`：開発環境へデプロイ
+   - `prod`：本番環境へデプロイ
+4. ラベル付与をトリガーにワークフローが実行され、Workload Identity Federation で認証後にインスタンスへ `docker compose` でデプロイされます。
+5. 動作確認後、`main` へマージしてリリースを完了します。
 
-3. 起動
-
-```bash
-docker compose up --build
-```
-
-`client` (`volatility-ncmma-notifier`) から `server` API への接続先は、Docker 内通信で `http://nginx/volatility` と `http://nginx/volume` を使います。
-
-## CI/CD (GCE Deploy)
-
-`hdm/.github/workflows/deploy.yml` を参考に、同等のラベル駆動デプロイを追加しています。
-
-- Workflow: `.github/workflows/deploy.yml`
-- Trigger: PR に `dev` / `stg` / `prd` ラベル付与
-- Deploy method: GCE へ `app.tar.gz` + `.env` を転送し、`docker compose up -d --build`
-
-### Required Secrets
-
-- `ORG_GH_APP_ID`, `ORG_GH_APP_PRIVATE_KEY` (GitHub App: Members Read 権限が必要)
-- `GCE_ZONE`
-- `DEV_GCE_INSTANCE_NAME`, `STG_GCE_INSTANCE_NAME`, `PRD_GCE_INSTANCE_NAME`
-- `DEV_GCP_SA_EMAIL`, `STG_GCP_SA_EMAIL`, `PRD_GCP_SA_EMAIL`
-- `DEV_GCP_WIF_PROVIDER`, `STG_GCP_WIF_PROVIDER`, `PRD_GCP_WIF_PROVIDER`
-- `DEV_APP_ENV`, `STG_APP_ENV`, `PRD_APP_ENV` (複数行 `.env` 本文)
-
-### Optional Variables
-
-- `DEPLOY_TARGET_DIR` (default: `/opt/apps/volatility-monorepo`)
