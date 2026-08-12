@@ -3,6 +3,8 @@ name: deploy-to-gce
 on:
   push:
     branches: [main]
+  pull_request:
+    types: [labeled]
   workflow_dispatch:
     inputs:
       environment:
@@ -25,6 +27,10 @@ permissions:
 
 jobs:
   deploy:
+    if: |
+      github.event_name != 'pull_request' ||
+      (github.event.action == 'labeled' &&
+       (github.event.label.name == 'dev' || github.event.label.name == 'stg'))
     uses: deg-labs/github-workflows/.github/workflows/gce-deploy.yml@main
     permissions:
       contents: read
@@ -34,13 +40,13 @@ jobs:
       checkout_submodules: true
       enforce_deploy_team: true
       deploy_team_slug: deg-develop
-      environment_name: ${{ github.event.inputs.environment || 'prd' }}
-      start_instance: ${{ (github.event.inputs.environment || 'prd') != 'prd' }}
-      gce_instance_secret: ${{ (github.event.inputs.environment || 'prd') == 'dev' && 'DEV_GCE_INSTANCE_NAME' || (github.event.inputs.environment || 'prd') == 'stg' && 'STG_GCE_INSTANCE_NAME' || 'PRD_GCE_INSTANCE_NAME' }}
+      environment_name: ${{ github.event_name == 'pull_request' && github.event.label.name || github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'prd' }}
+      start_instance: ${{ (github.event_name == 'pull_request' && github.event.label.name != 'prd') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment != 'prd') }}
+      gce_instance_secret: ${{ (github.event_name == 'pull_request' && github.event.label.name == 'dev' || github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev') && 'DEV_GCE_INSTANCE_NAME' || (github.event_name == 'pull_request' && github.event.label.name == 'stg' || github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'stg') && 'STG_GCE_INSTANCE_NAME' || 'PRD_GCE_INSTANCE_NAME' }}
       gce_zone_secret: GCE_ZONE
-      gcp_sa_email_secret: ${{ (github.event.inputs.environment || 'prd') == 'dev' && 'DEV_GCP_SA_EMAIL' || (github.event.inputs.environment || 'prd') == 'stg' && 'STG_GCP_SA_EMAIL' || 'PRD_GCP_SA_EMAIL' }}
-      gcp_wif_provider_secret: ${{ (github.event.inputs.environment || 'prd') == 'dev' && 'DEV_GCP_WIF_PROVIDER' || (github.event.inputs.environment || 'prd') == 'stg' && 'STG_GCP_WIF_PROVIDER' || 'PRD_GCP_WIF_PROVIDER' }}
-      app_env_secret: ${{ (github.event.inputs.environment || 'prd') == 'dev' && 'DEV_APP_ENV' || (github.event.inputs.environment || 'prd') == 'stg' && 'STG_APP_ENV' || 'PRD_APP_ENV' }}
+      gcp_sa_email_secret: ${{ (github.event_name == 'pull_request' && github.event.label.name == 'dev' || github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev') && 'DEV_GCP_SA_EMAIL' || (github.event_name == 'pull_request' && github.event.label.name == 'stg' || github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'stg') && 'STG_GCP_SA_EMAIL' || 'PRD_GCP_SA_EMAIL' }}
+      gcp_wif_provider_secret: ${{ (github.event_name == 'pull_request' && github.event.label.name == 'dev' || github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev') && 'DEV_GCP_WIF_PROVIDER' || (github.event_name == 'pull_request' && github.event.label.name == 'stg' || github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'stg') && 'STG_GCP_WIF_PROVIDER' || 'PRD_GCP_WIF_PROVIDER' }}
+      app_env_secret: ${{ (github.event_name == 'pull_request' && github.event.label.name == 'dev' || github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev') && 'DEV_APP_ENV' || (github.event_name == 'pull_request' && github.event.label.name == 'stg' || github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'stg') && 'STG_APP_ENV' || 'PRD_APP_ENV' }}
       github_app_id_secret: ORG_GH_APP_ID
       github_app_private_key_secret: ORG_GH_APP_PRIVATE_KEY
       artifact_excludes: |
