@@ -1,11 +1,11 @@
 name: deploy-to-gce
 
 on:
-  pull_request:
-    types: [labeled]
+  push:
+    branches: [main]
 
 concurrency:
-  group: deploy-${{ github.event.label.name }}
+  group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -13,48 +13,7 @@ permissions:
   id-token: write
 
 jobs:
-  # デプロイ対象のPRを事前に検証するガードジョブ。
-  # フォークPR・main以外のターゲット・マージ不可能なPRはデプロイを拒否する。
-  validate-deploy:
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request' &&
-      github.event.action == 'labeled' &&
-      (github.event.label.name == 'dev' || github.event.label.name == 'stg' || github.event.label.name == 'prd')
-    steps:
-      - name: Reject fork pull requests
-        run: |
-          if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
-            echo "::error::Deploy from a fork pull request is not allowed."
-            exit 1
-          fi
-
-      - name: Reject non-mainline pull requests
-        run: |
-          if [[ "${{ github.event.pull_request.base.ref }}" != "main" ]]; then
-            echo "::error::Deploy is only allowed for pull requests targeting the main branch."
-            exit 1
-          fi
-
-      - name: Reject unmergeable pull requests
-        env:
-          MERGE_COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
-        run: |
-          if [[ -z "$MERGE_COMMIT_SHA" ]]; then
-            echo "::error::Pull request is not mergeable. Only the merge commit of main can be deployed."
-            exit 1
-          fi
-
-      - name: Confirm team gating
-        run: |
-          echo "Deployment is gated on organization team membership (enforce_deploy_team=true, deploy_team_slug=deg-develop)."
-
   deploy:
-    needs: validate-deploy
-    if: |
-      github.event_name == 'pull_request' &&
-      github.event.action == 'labeled' &&
-      (github.event.label.name == 'dev' || github.event.label.name == 'stg' || github.event.label.name == 'prd')
     uses: deg-labs/github-workflows/.github/workflows/gce-deploy.yml@main
     permissions:
       contents: read
@@ -64,12 +23,13 @@ jobs:
       checkout_submodules: true
       enforce_deploy_team: true
       deploy_team_slug: deg-develop
-      start_instance: ${{ github.event.label.name != 'prd' }}
-      gce_instance_secret: ${{ github.event.label.name == 'dev' && 'DEV_GCE_INSTANCE_NAME' || github.event.label.name == 'stg' && 'STG_GCE_INSTANCE_NAME' || 'PRD_GCE_INSTANCE_NAME' }}
+      environment_name: prd
+      start_instance: false
+      gce_instance_secret: PRD_GCE_INSTANCE_NAME
       gce_zone_secret: GCE_ZONE
-      gcp_sa_email_secret: ${{ github.event.label.name == 'dev' && 'DEV_GCP_SA_EMAIL' || github.event.label.name == 'stg' && 'STG_GCP_SA_EMAIL' || 'PRD_GCP_SA_EMAIL' }}
-      gcp_wif_provider_secret: ${{ github.event.label.name == 'dev' && 'DEV_GCP_WIF_PROVIDER' || github.event.label.name == 'stg' && 'STG_GCP_WIF_PROVIDER' || 'PRD_GCP_WIF_PROVIDER' }}
-      app_env_secret: ${{ github.event.label.name == 'dev' && 'DEV_APP_ENV' || github.event.label.name == 'stg' && 'STG_APP_ENV' || 'PRD_APP_ENV' }}
+      gcp_sa_email_secret: PRD_GCP_SA_EMAIL
+      gcp_wif_provider_secret: PRD_GCP_WIF_PROVIDER
+      app_env_secret: PRD_APP_ENV
       github_app_id_secret: ORG_GH_APP_ID
       github_app_private_key_secret: ORG_GH_APP_PRIVATE_KEY
       artifact_excludes: |
@@ -82,14 +42,7 @@ jobs:
         .env
       prepare_command: |
         set -euo pipefail
-        # ラベル付与時点のPRヘッドではなく、mainへのマージ結果のSHAのみをデプロイする
-        PR_MERGE_COMMIT_SHA="${{ github.event.pull_request.merge_commit_sha }}"
-        if [[ -z "$PR_MERGE_COMMIT_SHA" ]]; then
-          echo "No merge commit SHA available. Aborting deployment." >&2
-          exit 1
-        fi
-        git fetch origin "$PR_MERGE_COMMIT_SHA"
-        git checkout -f "$PR_MERGE_COMMIT_SHA"
+        # reusable workflow側でpushされたmainのgithub.shaをcheckout済み。
         git submodule update --init --recursive
         sed -i 's/GOARCH=amd64/GOARCH="$(go env GOARCH)"/g' server/api/Dockerfile
         sed -i 's/GOARCH=amd64/GOARCH="$(go env GOARCH)"/g' server/fetcher/Dockerfile
