@@ -1,15 +1,19 @@
 name: deploy-to-gce
 
 on:
-  pull_request:
-    types: [labeled]
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   deploy:
-    if: |
-      github.event_name == 'pull_request' &&
-      github.event.action == 'labeled' &&
-      (github.event.label.name == 'dev' || github.event.label.name == 'stg' || github.event.label.name == 'prd')
     uses: deg-labs/github-workflows/.github/workflows/gce-deploy.yml@main
     permissions:
       contents: read
@@ -18,12 +22,14 @@ jobs:
     with:
       checkout_submodules: true
       enforce_deploy_team: true
-      start_instance: ${{ github.event.label.name != 'prd' }}
-      gce_instance_secret: ${{ github.event.label.name == 'dev' && 'DEV_GCE_INSTANCE_NAME' || github.event.label.name == 'stg' && 'STG_GCE_INSTANCE_NAME' || 'PRD_GCE_INSTANCE_NAME' }}
+      deploy_team_slug: deg-develop
+      environment_name: prd
+      start_instance: false
+      gce_instance_secret: PRD_GCE_INSTANCE_NAME
       gce_zone_secret: GCE_ZONE
-      gcp_sa_email_secret: ${{ github.event.label.name == 'dev' && 'DEV_GCP_SA_EMAIL' || github.event.label.name == 'stg' && 'STG_GCP_SA_EMAIL' || 'PRD_GCP_SA_EMAIL' }}
-      gcp_wif_provider_secret: ${{ github.event.label.name == 'dev' && 'DEV_GCP_WIF_PROVIDER' || github.event.label.name == 'stg' && 'STG_GCP_WIF_PROVIDER' || 'PRD_GCP_WIF_PROVIDER' }}
-      app_env_secret: ${{ github.event.label.name == 'dev' && 'DEV_APP_ENV' || github.event.label.name == 'stg' && 'STG_APP_ENV' || 'PRD_APP_ENV' }}
+      gcp_sa_email_secret: PRD_GCP_SA_EMAIL
+      gcp_wif_provider_secret: PRD_GCP_WIF_PROVIDER
+      app_env_secret: PRD_APP_ENV
       github_app_id_secret: ORG_GH_APP_ID
       github_app_private_key_secret: ORG_GH_APP_PRIVATE_KEY
       artifact_excludes: |
@@ -36,6 +42,8 @@ jobs:
         .env
       prepare_command: |
         set -euo pipefail
+        # reusable workflow側でpushされたmainのgithub.shaをcheckout済み。
+        git submodule update --init --recursive
         sed -i 's/GOARCH=amd64/GOARCH="$(go env GOARCH)"/g' server/api/Dockerfile
         sed -i 's/GOARCH=amd64/GOARCH="$(go env GOARCH)"/g' server/fetcher/Dockerfile
         printf '%s\n' "${APP_ENV}" > .env
