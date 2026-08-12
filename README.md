@@ -13,9 +13,6 @@
 
 1. `main` ブランチから作業ブランチを作成し、変更を実施します。
 2. `main` 向けにプルリクエストを作成します。
-3. デプロイ先に応じて PR にラベルを付与します。
-   - `dev`：開発環境へデプロイ
-   - `prod`：本番環境へデプロイ
-4. ラベル付与をトリガーにワークフローが実行され、Workload Identity Federation で認証後にインスタンスへ `docker compose` でデプロイされます。
-5. 動作確認後、`main` へマージしてリリースを完了します。
-
+3. レビューと必要な保護ルールを通過した変更を `main` へマージします。
+4. `main` へのpushをトリガーにワークフローが実行され、Workload Identity Federationで認証後にインスタンスへ `docker compose` でデプロイされます。
+5. デプロイ先はreusable workflowの `prd` environmentで保護されます。
