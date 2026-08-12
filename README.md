@@ -14,5 +14,6 @@
 1. `main` ブランチから作業ブランチを作成し、変更を実施します。
 2. `main` 向けにプルリクエストを作成します。
 3. レビューと必要な保護ルールを通過した変更を `main` へマージします。
-4. `main` へのpushをトリガーにワークフローが実行され、Workload Identity Federationで認証後にインスタンスへ `docker compose` でデプロイされます。
-5. デプロイ先はreusable workflowの `prd` environmentで保護されます。
+4. `main` へのpushで本番デプロイを行います。開発・ステージング環境へは、Actionsの手動実行で `dev` / `stg` を選択できます。
+5. 手動実行も `main` ref に限定され、Workload Identity Federationで認証後にインスタンスへ `docker compose` でデプロイされます。
+6. デプロイ先は選択したenvironmentで保護されます。
