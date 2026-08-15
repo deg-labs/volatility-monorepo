@@ -46,6 +46,14 @@ jobs:
           github.event_name == 'workflow_dispatch' && inputs.environment ||
           'prd'
         }}
+      app_env_secret: >-
+        ${{
+          (github.event_name == 'pull_request' && github.event.label.name == 'dev' ||
+           github.event_name == 'workflow_dispatch' && inputs.environment == 'dev') && 'DEV_APP_ENV' ||
+          (github.event_name == 'pull_request' && github.event.label.name == 'stg' ||
+           github.event_name == 'workflow_dispatch' && inputs.environment == 'stg') && 'STG_APP_ENV' ||
+          'PRD_APP_ENV'
+        }}
       artifact_excludes: |
         server/data
         server/logs
