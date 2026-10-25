@@ -30,7 +30,8 @@ jobs:
     if: |
       github.event_name != 'pull_request' ||
       (github.event.action == 'labeled' &&
-       (github.event.label.name == 'dev' || github.event.label.name == 'stg'))
+       (github.event.label.name == 'dev' || github.event.label.name == 'stg' ||
+        github.event.label.name == 'prd'))
     uses: deg-labs/github-workflows/.github/workflows/gce-deploy.yml@main
     permissions:
       contents: read
