@@ -24,3 +24,7 @@ client/ncmma/cache/
 *.db
 *.db-shm
 *.db-wal
+
+# Python regression test caches
+__pycache__/
+.pytest_cache/
