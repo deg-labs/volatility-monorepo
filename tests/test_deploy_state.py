@@ -57,7 +57,7 @@ class DeploymentStateTests(unittest.TestCase):
                 DOCKER_LOG=str(home / "docker.log"),
             )
             result = subprocess.run(
-                ["bash", "-eu", "-s", "--", "compose", "volatility-monorepo", "", "gce-123-1"], input=command, env=env, capture_output=True, text=True
+                ["bash", "-eu", "-s", "--", "compose", "volatility-monorepo", "", "gce-123-1", "docker-compose.yml"], input=command, env=env, capture_output=True, text=True
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
@@ -74,7 +74,7 @@ class DeploymentStateTests(unittest.TestCase):
             )
             self.assertEqual((target / "docker-compose.yml").read_text(), "new compose")
             self.assertEqual(
-                (home / "docker.log").read_text().splitlines()[0], "compose up -d --build --remove-orphans"
+                (home / "docker.log").read_text().splitlines()[0], "compose -f docker-compose.yml up -d --build --remove-orphans"
             )
 
 
