@@ -3,7 +3,6 @@ import re
 import subprocess
 import tarfile
 import tempfile
-import textwrap
 import unittest
 from urllib.request import urlopen
 from pathlib import Path
@@ -18,15 +17,10 @@ class DeploymentStateTests(unittest.TestCase):
         self.assertIsNotNone(match, "shared workflow must be pinned to a commit")
         url = (
             "https://raw.githubusercontent.com/deg-labs/github-workflows/"
-            f"{match.group(1)}/.github/workflows/gce-deploy.yml"
+            f"{match.group(1)}/scripts/deploy_remote.sh"
         )
         with urlopen(url, timeout=30) as response:
-            shared = response.read().decode()
-        command = textwrap.dedent(
-            shared.split("          script=$(cat <<'REMOTE'\n", 1)[1].split(
-                "          REMOTE\n", 1
-            )[0]
-        )
+            command = response.read().decode()
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
             target = home / "application"
@@ -39,11 +33,11 @@ class DeploymentStateTests(unittest.TestCase):
                 file = target / relative
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_bytes(content)
-            (home / ".env").write_text("configuration")
+            (home / "gce-123-1-env").write_text("configuration")
             release = home / "release"
             release.mkdir()
             (release / "docker-compose.yml").write_text("new compose")
-            with tarfile.open(home / "app.tar.gz", "w:gz") as archive:
+            with tarfile.open(home / "gce-123-1-archive.tgz", "w:gz") as archive:
                 archive.add(
                     release / "docker-compose.yml", arcname="./docker-compose.yml"
                 )
@@ -55,7 +49,7 @@ class DeploymentStateTests(unittest.TestCase):
             )
             for file in binaries.iterdir():
                 file.chmod(0o755)
-            command = command.replace('target="/opt/apps/$2"', f'target="{target}"')
+            command = command.replace('target="/opt/apps/$app"', f'target="{target}"')
             env = dict(
                 os.environ,
                 HOME=str(home),
@@ -63,7 +57,7 @@ class DeploymentStateTests(unittest.TestCase):
                 DOCKER_LOG=str(home / "docker.log"),
             )
             result = subprocess.run(
-                ["bash", "-eu", "-s", "--", "compose", "volatility-monorepo"], input=command, env=env, capture_output=True, text=True
+                ["bash", "-eu", "-s", "--", "compose", "volatility-monorepo", "", "gce-123-1"], input=command, env=env, capture_output=True, text=True
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
