@@ -1,9 +1,11 @@
 import os
+import re
 import subprocess
 import tarfile
 import tempfile
 import textwrap
 import unittest
+from urllib.request import urlopen
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,8 +14,18 @@ ROOT = Path(__file__).resolve().parents[1]
 class DeploymentStateTests(unittest.TestCase):
     def test_redeploy_keeps_client_ids_server_data_and_pending_journal(self):
         workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+        match = re.search(r"gce-deploy\.yml@([0-9a-f]{40})", workflow)
+        self.assertIsNotNone(match, "shared workflow must be pinned to a commit")
+        url = (
+            "https://raw.githubusercontent.com/deg-labs/github-workflows/"
+            f"{match.group(1)}/.github/workflows/gce-deploy.yml"
+        )
+        with urlopen(url, timeout=30) as response:
+            shared = response.read().decode()
         command = textwrap.dedent(
-            workflow.split("      remote_deploy_command: |\n", 1)[1]
+            shared.split("          script=$(cat <<'REMOTE'\n", 1)[1].split(
+                "          REMOTE\n", 1
+            )[0]
         )
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
@@ -43,9 +55,7 @@ class DeploymentStateTests(unittest.TestCase):
             )
             for file in binaries.iterdir():
                 file.chmod(0o755)
-            command = command.replace(
-                "TARGET_DIR='/opt/apps/volatility-monorepo'", f"TARGET_DIR='{target}'"
-            )
+            command = command.replace('target="/opt/apps/$2"', f'target="{target}"')
             env = dict(
                 os.environ,
                 HOME=str(home),
@@ -53,7 +63,7 @@ class DeploymentStateTests(unittest.TestCase):
                 DOCKER_LOG=str(home / "docker.log"),
             )
             result = subprocess.run(
-                ["bash", "-euc", command], env=env, capture_output=True, text=True
+                ["bash", "-eu", "-s", "--", "compose", "volatility-monorepo"], input=command, env=env, capture_output=True, text=True
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
@@ -70,7 +80,7 @@ class DeploymentStateTests(unittest.TestCase):
             )
             self.assertEqual((target / "docker-compose.yml").read_text(), "new compose")
             self.assertEqual(
-                (home / "docker.log").read_text().splitlines()[0], "compose down"
+                (home / "docker.log").read_text().splitlines()[0], "compose up -d --build --remove-orphans"
             )
 
 
