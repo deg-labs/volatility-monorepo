@@ -9,6 +9,8 @@
 
 ## リリース / デプロイ方法
 
+**必要なGitHub Actions SecretsとWIF/GCEの初期設定、Environment保護、手動・自動デプロイ、障害対応**は [CI/CD デプロイ設定ガイド](docs/DEPLOYMENT.md) を参照してください。
+
 このリポジトリは GitHub Actions の `deploy-to-gce` ワークフローで GCE インスタンスへデプロイされます。
 
 1. `main` ブランチから作業ブランチを作成し、変更を実施します。
